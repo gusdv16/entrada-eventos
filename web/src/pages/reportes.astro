@@ -1,0 +1,121 @@
+---
+import Base from '../layouts/Base.astro';
+const base = import.meta.env.BASE_URL;
+---
+<Base title="Reportes" description="Reportes de ventas: por evento, por tipo de entrada, ingresos y aforo.">
+  <span class="eyebrow">Reportes</span>
+  <h1>Reportes de ventas</h1>
+  <p class="lead">Resumen de tickets vendidos, ingresos y aforo por evento y por tipo de entrada.</p>
+
+  <div class="kpis" id="kpis-globales"></div>
+
+  <h2>Por evento</h2>
+  <div class="tabla-scroll">
+    <table>
+      <thead><tr>
+        <th>Evento</th><th>Fecha</th><th>Capacidad</th><th class="num">Vendidos</th>
+        <th class="num">Usados</th><th class="num">Disponibles</th><th class="num">Ingresos</th><th class="num">Ocupación</th>
+      </tr></thead>
+      <tbody id="t-eventos"></tbody>
+    </table>
+  </div>
+
+  <h2>Por tipo de entrada</h2>
+  <div class="tabla-scroll">
+    <table>
+      <thead><tr>
+        <th>Evento</th><th>Tipo</th><th class="num">Precio</th><th class="num">Vendidos</th><th class="num">Usados</th><th class="num">Ingresos</th>
+      </tr></thead>
+      <tbody id="t-tipos"></tbody>
+    </table>
+  </div>
+
+  <h2>Últimas ventas</h2>
+  <div class="tabla-scroll">
+    <table>
+      <thead><tr>
+        <th>Fecha</th><th>Evento</th><th>Comprador</th><th>Tipo</th><th class="num">Precio</th><th>Código</th><th>Estado</th>
+      </tr></thead>
+      <tbody id="t-ultimas"></tbody>
+    </table>
+  </div>
+
+  <script>
+    import { Store } from '../lib/store.js';
+    import { formatearMonto, fecha, fechaHora } from '../lib/formato.js';
+
+    const $ = (s) => document.querySelector(s);
+
+    function render() {
+      const eventos = Store.eventos().sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+      const tickets = Store.tickets();
+
+      const totalVendidos = tickets.filter((t) => t.estado !== 'cancelado').length;
+      const totalIngresos = tickets.reduce((s, t) => s + (t.precio || 0), 0);
+      const totalUsados = tickets.filter((t) => t.usado).length;
+      $('#kpis-globales').innerHTML = `
+        <div class="kpi"><b>${eventos.length}</b><span>eventos</span></div>
+        <div class="kpi"><b>${totalVendidos}</b><span>tickets vendidos</span></div>
+        <div class="kpi warn"><b>${formatearMonto(totalIngresos)}</b><span>ingresos totales</span></div>
+        <div class="kpi ok"><b>${totalUsados}</b><span>usados</span></div>
+        <div class="kpi"><b>${totalVendidos - totalUsados}</b><span>pendientes de usar</span></div>`;
+
+      // Por evento
+      const trEv = eventos.map((ev) => {
+        const tks = tickets.filter((t) => t.eventoId === ev.id);
+        const usados = tks.filter((t) => t.usado).length;
+        const ingresos = tks.reduce((s, t) => s + (t.precio || 0), 0);
+        const ocup = ev.capacidad ? Math.round((tks.length / ev.capacidad) * 100) : 0;
+        return `<tr>
+          <td>${ev.nombre}</td>
+          <td class="sm">${fecha(ev.fecha)}</td>
+          <td class="num">${ev.capacidad}</td>
+          <td class="num">${tks.length}</td>
+          <td class="num">${usados}</td>
+          <td class="num">${Math.max(0, ev.capacidad - tks.length)}</td>
+          <td class="num">${formatearMonto(ingresos)}</td>
+          <td class="num">${ocup}%</td>
+        </tr>`;
+      }).join('');
+      $('#t-eventos').innerHTML = trEv || '<tr><td colspan="8" class="sm">Sin eventos.</td></tr>';
+
+      // Por tipo
+      const trTipo = [];
+      for (const ev of eventos) {
+        for (const tipo of ev.tiposEntrada) {
+          const tks = tickets.filter((t) => t.eventoId === ev.id && t.tipoEntradaId === tipo.id);
+          if (!tks.length) continue;
+          const usados = tks.filter((t) => t.usado).length;
+          const ingresos = tks.reduce((s, t) => s + (t.precio || 0), 0);
+          trTipo.push(`<tr>
+            <td>${ev.nombre}</td>
+            <td>${tipo.nombre}</td>
+            <td class="num">${formatearMonto(tipo.precio)}</td>
+            <td class="num">${tks.length}</td>
+            <td class="num">${usados}</td>
+            <td class="num">${formatearMonto(ingresos)}</td>
+          </tr>`);
+        }
+      }
+      $('#t-tipos').innerHTML = trTipo.join('') || '<tr><td colspan="6" class="sm">Sin ventas.</td></tr>';
+
+      // Últimas ventas
+      const ultimas = [...tickets].sort((a, b) => b.fechaCompra.localeCompare(a.fechaCompra)).slice(0, 15);
+      const trUlt = ultimas.map((t) => {
+        const ev = Store.evento(t.eventoId);
+        return `<tr>
+          <td class="sm">${fechaHora(t.fechaCompra)}</td>
+          <td>${ev?.nombre || '—'}</td>
+          <td>${t.comprador.nombre}</td>
+          <td>${t.tipoNombre}</td>
+          <td class="num">${formatearMonto(t.precio)}</td>
+          <td><code>${t.codigo}</code></td>
+          <td><span class="badge ${t.usado ? 'err' : 'ok'}">${t.usado ? 'Usado' : 'Disponible'}</span></td>
+        </tr>`;
+      }).join('');
+      $('#t-ultimas').innerHTML = trUlt || '<tr><td colspan="7" class="sm">Sin ventas.</td></tr>';
+    }
+
+    render();
+  </script>
+</Base>

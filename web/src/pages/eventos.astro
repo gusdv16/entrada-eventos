@@ -1,0 +1,162 @@
+---
+import Base from '../layouts/Base.astro';
+const base = import.meta.env.BASE_URL;
+---
+<Base title="Eventos" description="Crear y gestionar eventos con tipos de entrada y capacidad.">
+  <span class="eyebrow">Eventos</span>
+  <h1>Crear y gestionar eventos</h1>
+  <p class="lead">Definí el evento, la fecha, el lugar, la capacidad y los tipos de entrada con su precio.</p>
+
+  <div class="panel">
+    <h3 id="form-titulo" style="margin-top:0">Nuevo evento</h3>
+    <div class="grid cols-2">
+      <div>
+        <label class="field" for="ev-nombre">Nombre del evento</label>
+        <input id="ev-nombre" type="text" placeholder="Fiesta de fin de año">
+      </div>
+      <div>
+        <label class="field" for="ev-fecha">Fecha y hora</label>
+        <input id="ev-fecha" type="datetime-local">
+      </div>
+      <div>
+        <label class="field" for="ev-lugar">Lugar</label>
+        <input id="ev-lugar" type="text" placeholder="Salón principal">
+      </div>
+      <div>
+        <label class="field" for="ev-cap">Capacidad total</label>
+        <input id="ev-cap" type="number" value="100" min="1" step="1">
+      </div>
+    </div>
+
+    <h3>Tipos de entrada</h3>
+    <div id="tipos-container"></div>
+    <button class="btn ghost" id="btn-add-tipo" type="button" style="margin-top:0.5rem">+ Agregar tipo</button>
+
+    <div class="actions" style="margin-top:1rem">
+      <button class="btn" id="btn-guardar" type="button">Guardar evento</button>
+      <button class="btn ghost hidden" id="btn-cancelar" type="button">Cancelar edición</button>
+      <span class="sm" id="estado"></span>
+    </div>
+  </div>
+
+  <h2>Eventos creados</h2>
+  <div id="lista" class="grid cols-2"></div>
+  <p id="sin-eventos" class="sm hidden">No hay eventos. Creá el primero arriba.</p>
+
+  <script>
+    import { Store } from '../lib/store.js';
+    import { uid, formatearMonto } from '../lib/formato.js';
+
+    const $ = (s) => document.querySelector(s);
+    let editandoId = null;
+
+    function tipoRow(tipo = { nombre: '', precio: 0 }) {
+      const div = document.createElement('div');
+      div.className = 'grid cols-2';
+      div.style.marginBottom = '0.5rem';
+      div.innerHTML = `
+        <input type="text" placeholder="Nombre (ej: General)" value="${tipo.nombre || ''}" class="tipo-nombre">
+        <div style="display:flex;gap:0.5rem">
+          <input type="number" placeholder="Precio" value="${tipo.precio || ''}" min="0" step="0.01" class="tipo-precio" style="flex:1">
+          <button type="button" class="btn ghost btn-remove-tipo" style="padding:0.4rem 0.7rem">✕</button>
+        </div>`;
+      div.querySelector('.btn-remove-tipo').addEventListener('click', () => div.remove());
+      return div;
+    }
+
+    function resetForm() {
+      editandoId = null;
+      $('#ev-nombre').value = '';
+      $('#ev-fecha').value = '';
+      $('#ev-lugar').value = '';
+      $('#ev-cap').value = '100';
+      $('#tipos-container').innerHTML = '';
+      $('#tipos-container').append(tipoRow({ nombre: 'General', precio: 500 }));
+      $('#form-titulo').textContent = 'Nuevo evento';
+      $('#btn-cancelar').classList.add('hidden');
+      $('#estado').textContent = '';
+    }
+
+    function leerTipos() {
+      return [...$('#tipos-container').children].map((d) => ({
+        id: d.dataset.id || uid(),
+        nombre: d.querySelector('.tipo-nombre').value.trim(),
+        precio: Number(d.querySelector('.tipo-precio').value) || 0,
+      })).filter((t) => t.nombre);
+    }
+
+    $('#btn-add-tipo').addEventListener('click', () => {
+      $('#tipos-container').append(tipoRow());
+    });
+
+    $('#btn-guardar').addEventListener('click', () => {
+      const nombre = $('#ev-nombre').value.trim();
+      if (!nombre) { $('#estado').textContent = 'Falta el nombre del evento.'; return; }
+      const tipos = leerTipos();
+      if (!tipos.length) { $('#estado').textContent = 'Agregá al menos un tipo de entrada.'; return; }
+      const ev = {
+        id: editandoId || uid(),
+        nombre,
+        fecha: $('#ev-fecha').value,
+        lugar: $('#ev-lugar').value.trim(),
+        capacidad: Number($('#ev-cap').value) || 100,
+        tiposEntrada: tipos,
+        creadoEn: editandoId ? (Store.evento(editandoId)?.creadoEn || new Date().toISOString()) : new Date().toISOString(),
+      };
+      Store.guardarEvento(ev);
+      $('#estado').textContent = editandoId ? 'Evento actualizado.' : 'Evento creado.';
+      resetForm();
+      render();
+    });
+
+    $('#btn-cancelar').addEventListener('click', resetForm);
+
+    function render() {
+      const eventos = Store.eventos().sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+      const cont = $('#lista');
+      cont.innerHTML = '';
+      if (!eventos.length) { $('#sin-eventos').classList.remove('hidden'); return; }
+      $('#sin-eventos').classList.add('hidden');
+      for (const ev of eventos) {
+        const tickets = Store.ticketsDeEvento(ev.id);
+        const card = document.createElement('div');
+        card.className = 'panel';
+        card.innerHTML = `
+          <h3 style="margin-top:0">${ev.nombre}</h3>
+          <p class="sm">${ev.fecha ? new Date(ev.fecha).toLocaleString('es-UY') : 'Sin fecha'} · ${ev.lugar || 'Sin lugar'}</p>
+          <p class="sm">Capacidad: ${ev.capacidad} · Vendidos: ${tickets.length} · Tipos: ${ev.tiposEntrada.map((t) => `${t.nombre} (${formatearMonto(t.precio)})`).join(', ')}</p>
+          <div class="actions" style="margin-top:0.6rem">
+            <a class="btn ghost" href="${document.body.dataset.base + 'vender/?evento=' + ev.id}">Vender</a>
+            <a class="btn ghost" href="${document.body.dataset.base + 'tickets/?evento=' + ev.id}">Tickets</a>
+            <button class="btn ghost btn-editar" data-id="${ev.id}">Editar</button>
+            <button class="btn danger btn-eliminar" data-id="${ev.id}">Eliminar</button>
+          </div>`;
+        card.querySelector('.btn-editar').addEventListener('click', () => editar(ev.id));
+        card.querySelector('.btn-eliminar').addEventListener('click', () => {
+          if (confirm(`¿Eliminar "${ev.nombre}" y todos sus tickets?`)) {
+            Store.eliminarEvento(ev.id); render();
+          }
+        });
+        cont.append(card);
+      }
+    }
+
+    function editar(id) {
+      const ev = Store.evento(id);
+      if (!ev) return;
+      editandoId = id;
+      $('#ev-nombre').value = ev.nombre;
+      $('#ev-fecha').value = ev.fecha || '';
+      $('#ev-lugar').value = ev.lugar || '';
+      $('#ev-cap').value = ev.capacidad;
+      $('#tipos-container').innerHTML = '';
+      for (const t of ev.tiposEntrada) $('#tipos-container').append(tipoRow(t));
+      $('#form-titulo').textContent = 'Editar evento';
+      $('#btn-cancelar').classList.remove('hidden');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    resetForm();
+    render();
+  </script>
+</Base>

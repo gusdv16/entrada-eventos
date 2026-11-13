@@ -1,0 +1,16 @@
+{
+  "name": "entrada-eventos",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Sistema de venta y validación de entradas para eventos. Demo que corre 100% en el navegador.",
+  "workspaces": ["web"],
+  "scripts": {
+    "dev": "npm --workspace web run dev",
+    "build": "npm --workspace web run build",
+    "preview": "npm --workspace web run preview"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  }
+}

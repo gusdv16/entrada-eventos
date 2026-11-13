@@ -1,0 +1,172 @@
+---
+import Base from '../layouts/Base.astro';
+const base = import.meta.env.BASE_URL;
+---
+<Base title="Vender entradas" description="Vender entradas para un evento: elegí tipo, comprador y cantidad.">
+  <span class="eyebrow">Venta</span>
+  <h1>Vender entradas</h1>
+  <p class="lead">Elegí el evento y el tipo de entrada, cargá los datos del comprador y la cantidad. Se generan tickets con código único y QR.</p>
+
+  <div class="panel">
+    <div class="grid cols-2">
+      <div>
+        <label class="field" for="sel-evento">Evento</label>
+        <select id="sel-evento"></select>
+      </div>
+      <div>
+        <label class="field" for="sel-tipo">Tipo de entrada</label>
+        <select id="sel-tipo"></select>
+      </div>
+    </div>
+    <div id="info-evento" class="sm" style="margin-top:0.6rem"></div>
+
+    <h3>Datos del comprador</h3>
+    <div class="grid cols-2">
+      <div>
+        <label class="field" for="in-nombre">Nombre</label>
+        <input id="in-nombre" type="text" placeholder="Nombre y apellido">
+      </div>
+      <div>
+        <label class="field" for="in-email">Email</label>
+        <input id="in-email" type="email" placeholder="email@ejemplo.com">
+      </div>
+      <div>
+        <label class="field" for="in-cant">Cantidad</label>
+        <input id="in-cant" type="number" value="1" min="1" max="20" step="1">
+      </div>
+      <div>
+        <label class="field" for="in-precio">Precio unitario (editable)</label>
+        <input id="in-precio" type="number" min="0" step="0.01">
+      </div>
+    </div>
+
+    <div class="actions" style="margin-top:1rem">
+      <button class="btn" id="btn-vender" type="button">Generar tickets</button>
+      <span class="sm" id="estado"></span>
+    </div>
+  </div>
+
+  <div id="tickets-generados" class="hidden">
+    <h2>Tickets generados</h2>
+    <p class="sm">Imprimí esta página (Ctrl+P) o descargá los tickets. Cada uno tiene un código único y un QR.</p>
+    <div class="grid-tickets" id="grid-tickets"></div>
+    <div class="actions no-print" style="margin-top:1rem">
+      <button class="btn ghost" onclick="window.print()">Imprimir</button>
+      <a class="btn ghost" id="link-tickets" href="#">Ver todos los tickets</a>
+    </div>
+  </div>
+
+  <script>
+    import { Store } from '../lib/store.js';
+    import { uid, codigoTicket, formatearMonto, fecha } from '../lib/formato.js';
+    import { qrImg } from '../lib/qr.js';
+
+    const $ = (s) => document.querySelector(s);
+    const base = document.body.dataset.base || '/';
+
+    function cargarEventos() {
+      const eventos = Store.eventos().sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+      const sel = $('#sel-evento');
+      sel.innerHTML = eventos.length
+        ? eventos.map((e) => `<option value="${e.id}">${e.nombre} (${fecha(e.fecha)})</option>`).join('')
+        : '<option value="">Sin eventos — creá uno primero</option>';
+      if (eventos.length) actualizarTipos();
+    }
+
+    function actualizarTipos() {
+      const ev = Store.evento($('#sel-evento').value);
+      const sel = $('#sel-tipo');
+      if (!ev) { sel.innerHTML = ''; $('#info-evento').textContent = ''; return; }
+      sel.innerHTML = ev.tiposEntrada.map((t) => `<option value="${t.id}" data-precio="${t.precio}">${t.nombre} — ${formatearMonto(t.precio)}</option>`).join('');
+      const vendidos = Store.ticketsDeEvento(ev.id).length;
+      $('#info-evento').textContent = `Capacidad: ${ev.capacidad} · Vendidos: ${vendidos} · Disponibles: ${Math.max(0, ev.capacidad - vendidos)}`;
+      const opt = sel.selectedOptions[0];
+      if (opt) $('#in-precio').value = opt.dataset.precio || 0;
+    }
+
+    $('#sel-evento').addEventListener('change', actualizarTipos);
+    $('#sel-tipo').addEventListener('change', () => {
+      const opt = $('#sel-tipo').selectedOptions[0];
+      if (opt) $('#in-precio').value = opt.dataset.precio || 0;
+    });
+
+    // Preseleccionar evento desde query string
+    const params = new URLSearchParams(location.search);
+    const evParam = params.get('evento');
+    cargarEventos();
+    if (evParam && Store.evento(evParam)) {
+      $('#sel-evento').value = evParam;
+      actualizarTipos();
+    }
+
+    $('#btn-vender').addEventListener('click', async () => {
+      const eventoId = $('#sel-evento').value;
+      const ev = Store.evento(eventoId);
+      if (!ev) { $('#estado').textContent = 'Seleccioná un evento.'; return; }
+      const tipoId = $('#sel-tipo').value;
+      const tipo = ev.tiposEntrada.find((t) => t.id === tipoId);
+      if (!tipo) { $('#estado').textContent = 'Seleccioná un tipo de entrada.'; return; }
+      const nombre = $('#in-nombre').value.trim();
+      if (!nombre) { $('#estado').textContent = 'Falta el nombre del comprador.'; return; }
+      const cant = Math.max(1, Math.min(20, Number($('#in-cant').value) || 1));
+      const precio = Number($('#in-precio').value) || tipo.precio;
+      const vendidos = Store.ticketsDeEvento(ev.id).length;
+      if (vendidos + cant > ev.capacidad) {
+        $('#estado').textContent = `No hay capacidad suficiente (disponibles: ${ev.capacidad - vendidos}).`;
+        return;
+      }
+
+      const tickets = [];
+      for (let i = 0; i < cant; i++) {
+        const codigo = codigoTicket();
+        tickets.push({
+          id: uid(),
+          codigo,
+          eventoId: ev.id,
+          tipoEntradaId: tipo.id,
+          tipoNombre: tipo.nombre,
+          comprador: { nombre, email: $('#in-email').value.trim() },
+          precio,
+          fechaCompra: new Date().toISOString(),
+          usado: false,
+          usadoEn: null,
+        });
+      }
+      Store.guardarTickets(tickets);
+
+      // Renderizar tickets con QR
+      const grid = $('#grid-tickets');
+      grid.innerHTML = '';
+      for (const t of tickets) {
+        const card = document.createElement('div');
+        card.className = 'ticket';
+        const qr = await qrImg(t.codigo, 120);
+        card.innerHTML = `
+          <div class="head">
+            <div>
+              <div class="evento">${ev.nombre}</div>
+              <div class="fecha">${fecha(ev.fecha)} · ${ev.lugar || ''}</div>
+            </div>
+            <div class="badge ok">${t.tipoNombre}</div>
+          </div>
+          <div class="body">
+            <div class="info">
+              <div class="label">Comprador</div>
+              <div class="val">${t.comprador.nombre}</div>
+              <div class="label">Precio</div>
+              <div class="val">${formatearMonto(t.precio)}</div>
+            </div>
+            ${qr.outerHTML}
+          </div>
+          <div class="codigo">${t.codigo}</div>`;
+        grid.append(card);
+      }
+
+      $('#tickets-generados').classList.remove('hidden');
+      $('#estado').textContent = `${tickets.length} ticket(s) generado(s).`;
+      $('#link-tickets').href = base + 'tickets/?evento=' + ev.id;
+      $('#tickets-generados').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      actualizarTipos();
+    });
+  </script>
+</Base>

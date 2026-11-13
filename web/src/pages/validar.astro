@@ -1,0 +1,192 @@
+---
+import Base from '../layouts/Base.astro';
+const base = import.meta.env.BASE_URL;
+---
+<Base title="Validar entradas" description="Validar tickets en la puerta: escaneá el QR con la cámara o ingresá el código a mano.">
+  <span class="eyebrow">Validación en puerta</span>
+  <h1>Validar entradas</h1>
+  <p class="lead">Escaneá el código QR con la cámara del dispositivo o ingresá el código a mano. El sistema marca el ticket como usado y evita doble ingreso.</p>
+
+  <div class="panel">
+    <div class="grid cols-2">
+      <div>
+        <label class="field" for="sel-evento">Filtrar por evento (opcional)</label>
+        <select id="sel-evento"><option value="">Todos los eventos</option></select>
+      </div>
+      <div>
+        <label class="field" for="in-codigo">Código del ticket</label>
+        <div style="display:flex;gap:0.5rem">
+          <input id="in-codigo" type="text" placeholder="ABCD1234" style="flex:1;text-transform:uppercase">
+          <button class="btn" id="btn-validar-manual" type="button">Validar</button>
+        </div>
+      </div>
+    </div>
+
+    <details style="margin-top:1rem">
+      <summary>Usar cámara para escanear QR</summary>
+      <div style="margin-top:0.6rem">
+        <div class="scanner-box" id="scanner-box">
+          <video id="scanner-video" playsinline></video>
+          <div class="scanner-overlay"><div class="scanner-frame"></div></div>
+        </div>
+        <div class="actions" style="margin-top:0.6rem">
+          <button class="btn ghost" id="btn-cam-on" type="button">Encender cámara</button>
+          <button class="btn ghost" id="btn-cam-off" type="button">Apagar cámara</button>
+          <span class="sm" id="cam-estado"></span>
+        </div>
+        <p class="sm" id="cam-soporte"></p>
+      </div>
+    </details>
+  </div>
+
+  <div id="resultado" class="hidden"></div>
+
+  <div class="panel no-print" style="margin-top:1.5rem">
+    <h3 style="margin-top:0">Últimas validaciones</h3>
+    <div class="tabla-scroll">
+      <table>
+        <thead><tr><th>Hora</th><th>Código</th><th>Evento</th><th>Comprador</th><th>Resultado</th></tr></thead>
+        <tbody id="historial"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    import { Store } from '../lib/store.js';
+    import { formatearMonto, fecha, fechaHora } from '../lib/formato.js';
+
+    const $ = (s) => document.querySelector(s);
+    const historial = [];
+
+    function cargarEventos() {
+      const eventos = Store.eventos().sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+      const sel = $('#sel-evento');
+      sel.innerHTML = '<option value="">Todos los eventos</option>' +
+        eventos.map((e) => `<option value="${e.id}">${e.nombre}</option>`).join('');
+    }
+    cargarEventos();
+
+    function mostrarResultado(ticket, motivo) {
+      const cont = $('#resultado');
+      cont.classList.remove('hidden');
+      if (!ticket) {
+        cont.className = 'resultado-validacion err';
+        cont.innerHTML = `<div class="icon">✕</div><div class="titulo">Código no válido</div><p class="sm">${motivo || 'No se encontró ningún ticket con ese código.'}</p>`;
+        agregarHistorial(null, motivo || 'No válido', 'err');
+        return;
+      }
+      const ev = Store.evento(ticket.eventoId);
+      if (ticket.usado) {
+        cont.className = 'resultado-validacion warn';
+        cont.innerHTML = `
+          <div class="icon">⚠</div>
+          <div class="titulo">Ya fue usado</div>
+          <p><b>${ticket.comprador.nombre}</b> · ${ticket.tipoNombre}</p>
+          <p class="sm">${ev?.nombre || ''}</p>
+          <p class="sm">Usado el ${fechaHora(ticket.usadoEn)}</p>`;
+        agregarHistorial(ticket, 'Ya usado', 'warn');
+        return;
+      }
+      // Marcar como usado
+      Store.marcarUsado(ticket.id);
+      cont.className = 'resultado-validacion ok';
+      cont.innerHTML = `
+        <div class="icon">✓</div>
+        <div class="titulo">Entrada válida</div>
+        <p><b>${ticket.comprador.nombre}</b> · ${ticket.tipoNombre}</p>
+        <p class="sm">${ev?.nombre || ''} · ${formatearMonto(ticket.precio)}</p>
+        <p class="sm">Marcado como usado ahora.</p>`;
+      agregarHistorial(ticket, 'Válido', 'ok');
+    }
+
+    function agregarHistorial(ticket, resultado, tipo) {
+      historial.unshift({ hora: new Date().toISOString(), codigo: ticket?.codigo || '—', evento: ticket ? (Store.evento(ticket.eventoId)?.nombre || '') : '', comprador: ticket?.comprador?.nombre || '—', resultado, tipo });
+      if (historial.length > 20) historial.pop();
+      const tbody = $('#historial');
+      tbody.innerHTML = historial.map((h) => `
+        <tr>
+          <td class="sm">${fechaHora(h.hora)}</td>
+          <td><code>${h.codigo}</code></td>
+          <td class="sm">${h.evento}</td>
+          <td class="sm">${h.comprador}</td>
+          <td><span class="badge ${h.tipo === 'ok' ? 'ok' : h.tipo === 'warn' ? 'warn' : 'err'}">${h.resultado}</span></td>
+        </tr>`).join('');
+    }
+
+    function validarCodigo(codigo) {
+      codigo = (codigo || '').trim().toUpperCase();
+      if (!codigo) return;
+      $('#in-codigo').value = '';
+      const filtro = $('#sel-evento').value;
+      const ticket = Store.ticketPorCodigo(codigo);
+      if (ticket && filtro && ticket.eventoId !== filtro) {
+        mostrarResultado(ticket, 'El ticket pertenece a otro evento.');
+        return;
+      }
+      mostrarResultado(ticket, null);
+    }
+
+    $('#btn-validar-manual').addEventListener('click', () => validarCodigo($('#in-codigo').value));
+    $('#in-codigo').addEventListener('keydown', (e) => { if (e.key === 'Enter') validarCodigo($('#in-codigo').value); });
+
+    // --- Cámara ---
+    const video = $('#scanner-video');
+    const camEstado = $('#cam-estado');
+    const soporte = $('#cam-soporte');
+    let stream = null;
+    let detector = null;
+    let scanning = false;
+
+    if ('BarcodeDetector' in window) {
+      BarcodeDetector.getSupportedFormats().then((fmts) => {
+        if (fmts.includes('qr_code')) {
+          detector = new BarcodeDetector({ formats: ['qr_code'] });
+          soporte.textContent = 'Tu navegador soporta escaneo de QR por cámara.';
+        } else {
+          soporte.textContent = 'Tu navegador no soporta QR. Usá el ingreso manual.';
+        }
+      }).catch(() => { soporte.textContent = 'No se pudo inicializar el escáner. Usá el ingreso manual.'; });
+    } else {
+      soporte.textContent = 'Tu navegador no soporta escaneo por cámara. Usá el ingreso manual.';
+    }
+
+    async function escanearFrame() {
+      if (!scanning || !detector || !video || video.readyState < 2) {
+        if (scanning) requestAnimationFrame(escanearFrame);
+        return;
+      }
+      try {
+        const codes = await detector.detect(video);
+        if (codes.length) {
+          const val = codes[0].rawValue;
+          if (val) { validarCodigo(val); }
+          // Pausar un poco para no validar el mismo código varias veces
+          scanning = false;
+          setTimeout(() => { scanning = true; escanearFrame(); }, 1500);
+          return;
+        }
+      } catch (e) { /* ignore */ }
+      if (scanning) requestAnimationFrame(escanearFrame);
+    }
+
+    $('#btn-cam-on').addEventListener('click', async () => {
+      if (!detector) { camEstado.textContent = 'Escáner no disponible.'; return; }
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        video.srcObject = stream;
+        await video.play();
+        scanning = true;
+        escanearFrame();
+        camEstado.textContent = 'Cámara encendida. Apuntá al QR.';
+      } catch (e) {
+        camEstado.textContent = 'No se pudo acceder a la cámara: ' + e.message;
+      }
+    });
+    $('#btn-cam-off').addEventListener('click', () => {
+      scanning = false;
+      if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
+      video.srcObject = null;
+      camEstado.textContent = 'Cámara apagada.';
+    });
+  </script>
+</Base>

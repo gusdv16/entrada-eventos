@@ -1,0 +1,94 @@
+---
+import Base from '../layouts/Base.astro';
+const base = import.meta.env.BASE_URL;
+---
+<Base title="Entradas para eventos" description="Sistema de venta y validación de entradas para eventos. Demo 100% en el navegador.">
+  <span class="eyebrow">Demo</span>
+  <h1>Venta y validación de entradas para eventos</h1>
+  <p class="lead">
+    Creá eventos, vendé entradas, generá tickets con código QR e imprimilos, y validalos en la puerta con el
+    celular. Todo corre en el navegador: los datos se guardan en tu dispositivo y podés exportarlos/importarlos
+    como JSON para compartirlos entre dispositivos.
+  </p>
+
+  <div class="grid cols-4" id="kpis" style="margin-top:1.5rem">
+    <div class="kpi"><b id="k-eventos">0</b><span>eventos</span></div>
+    <div class="kpi"><b id="k-vendidos">0</b><span>tickets vendidos</span></div>
+    <div class="kpi"><b id="k-ingresos">$ 0,00</b><span>ingresos</span></div>
+    <div class="kpi"><b id="k-usados">0</b><span>tickets usados</span></div>
+  </div>
+
+  <div class="actions no-print" style="margin-top:1.2rem">
+    <a class="btn" href={base + 'eventos/'}>Crear evento</a>
+    <a class="btn ghost" href={base + 'vender/'}>Vender entradas</a>
+    <a class="btn ghost" href={base + 'validar/'}>Validar en puerta</a>
+    <button class="btn ghost" id="btn-exportar" type="button">Exportar datos (JSON)</button>
+    <label class="btn ghost" style="cursor:pointer">Importar datos (JSON)<input id="inp-importar" type="file" accept=".json" style="display:none"></label>
+    <button class="btn danger" id="btn-reset" type="button">Borrar todo</button>
+  </div>
+
+  <h2>Eventos activos</h2>
+  <div id="lista-eventos" class="grid cols-2"></div>
+  <p id="sin-eventos" class="sm hidden">Todavía no creaste ningún evento. Empezá por "Crear evento".</p>
+
+  <h2>Cómo funciona</h2>
+  <ul>
+    <li><strong>Eventos:</strong> definís nombre, fecha, lugar, capacidad y tipos de entrada con precio.</li>
+    <li><strong>Venta:</strong> elegís evento y tipo, cargás comprador y cantidad. Se generan tickets con código único y QR.</li>
+    <li><strong>Tickets:</strong> los imprimís (PDF o impresora) y los entregás al comprador.</li>
+    <li><strong>Validación:</strong> en la puerta escaneás el QR (o ingresás el código a mano) y el sistema marca el ticket como usado.</li>
+    <li><strong>Reportes:</strong> ventas por evento, por tipo de entrada, ingresos y aforo.</li>
+  </ul>
+  <div class="note">Es una demo: los datos viven en el navegador (localStorage). Para compartir entre dispositivos usá Exportar/Importar JSON.</div>
+
+  <script>
+    import { Store } from '../lib/store.js';
+    import { formatearMonto } from '../lib/formato.js';
+
+    const $ = (s) => document.querySelector(s);
+    function render() {
+      const st = Store.stats();
+      $('#k-eventos').textContent = st.eventos;
+      $('#k-vendidos').textContent = st.ticketsVendidos;
+      $('#k-ingresos').textContent = formatearMonto(st.ingresos);
+      $('#k-usados').textContent = st.usados;
+
+      const eventos = Store.eventos().sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+      const cont = $('#lista-eventos');
+      cont.innerHTML = '';
+      if (!eventos.length) { $('#sin-eventos').classList.remove('hidden'); return; }
+      $('#sin-eventos').classList.add('hidden');
+      for (const ev of eventos) {
+        const tickets = Store.ticketsDeEvento(ev.id);
+        const usados = tickets.filter((t) => t.usado).length;
+        const card = document.createElement('a');
+        card.className = 'card-link';
+        card.href = (document.body.dataset.base || '/') + 'vender/?evento=' + ev.id;
+        card.innerHTML = `
+          <h3>${ev.nombre}</h3>
+          <p>${ev.fecha ? new Date(ev.fecha).toLocaleDateString('es-UY') : 'Sin fecha'} · ${ev.lugar || 'Sin lugar'}</p>
+          <p class="sm">${tickets.length} vendidos / ${ev.capacidad} capacidad · ${usados} usados · ${formatearMonto(tickets.reduce((s, t) => s + (t.precio || 0), 0))}</p>`;
+        cont.append(card);
+      }
+    }
+    render();
+
+    $('#btn-exportar').addEventListener('click', () => {
+      const blob = new Blob([Store.exportar()], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'entradas-datos.json'; a.click();
+      URL.revokeObjectURL(url);
+    });
+    $('#inp-importar').addEventListener('change', async (e) => {
+      const f = e.target.files[0]; if (!f) return;
+      try { Store.importar(await f.text()); render(); alert('Datos importados correctamente.'); }
+      catch (err) { alert('Archivo inválido: ' + err.message); }
+    });
+    $('#btn-reset').addEventListener('click', () => {
+      if (confirm('¿Borrar todos los eventos y tickets? Esta acción no se puede deshacer.')) {
+        Store.reset(); render();
+      }
+    });
+  </script>
+</Base>

@@ -1,0 +1,103 @@
+---
+import Base from '../layouts/Base.astro';
+const base = import.meta.env.BASE_URL;
+---
+<Base title="Tickets" description="Ver e imprimir los tickets generados.">
+  <span class="eyebrow">Tickets</span>
+  <h1>Tickets generados</h1>
+  <p class="lead">Filtrá por evento, imprimí los tickets (Ctrl+P) y entregalos al comprador.</p>
+
+  <div class="panel no-print">
+    <div class="grid cols-2">
+      <div>
+        <label class="field" for="sel-evento">Evento</label>
+        <select id="sel-evento"><option value="">Todos los eventos</option></select>
+      </div>
+      <div>
+        <label class="field" for="sel-estado">Estado</label>
+        <select id="sel-estado">
+          <option value="">Todos</option>
+          <option value="disponible">Disponibles</option>
+          <option value="usado">Usados</option>
+        </select>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn ghost" onclick="window.print()">Imprimir</button>
+      <span class="sm" id="estado"></span>
+    </div>
+  </div>
+
+  <div id="grid-tickets" class="grid-tickets"></div>
+  <p id="sin-tickets" class="sm hidden">No hay tickets para mostrar.</p>
+
+  <script>
+    import { Store } from '../lib/store.js';
+    import { formatearMonto, fecha } from '../lib/formato.js';
+    import { qrImg } from '../lib/qr.js';
+
+    const $ = (s) => document.querySelector(s);
+    const base = document.body.dataset.base || '/';
+
+    async function render() {
+      const eventoId = $('#sel-evento').value;
+      const estadoFiltro = $('#sel-estado').value;
+      let tickets = Store.tickets();
+      if (eventoId) tickets = tickets.filter((t) => t.eventoId === eventoId);
+      if (estadoFiltro === 'disponible') tickets = tickets.filter((t) => !t.usado);
+      if (estadoFiltro === 'usado') tickets = tickets.filter((t) => t.usado);
+      tickets.sort((a, b) => a.fechaCompra.localeCompare(b.fechaCompra));
+
+      const grid = $('#grid-tickets');
+      grid.innerHTML = '';
+      if (!tickets.length) { $('#sin-tickets').classList.remove('hidden'); $('#estado').textContent = ''; return; }
+      $('#sin-tickets').classList.add('hidden');
+      $('#estado').textContent = `${tickets.length} ticket(s).`;
+
+      for (const t of tickets) {
+        const ev = Store.evento(t.eventoId);
+        if (!ev) continue;
+        const card = document.createElement('div');
+        card.className = 'ticket' + (t.usado ? ' usado' : '');
+        const qr = await qrImg(t.codigo, 110);
+        card.innerHTML = `
+          <div class="head">
+            <div>
+              <div class="evento">${ev.nombre}</div>
+              <div class="fecha">${fecha(ev.fecha)} · ${ev.lugar || ''}</div>
+            </div>
+            <div class="badge ${t.usado ? 'err' : 'ok'}">${t.usado ? 'USADO' : t.tipoNombre}</div>
+          </div>
+          <div class="body">
+            <div class="info">
+              <div class="label">Comprador</div>
+              <div class="val">${t.comprador.nombre}</div>
+              <div class="label">Precio</div>
+              <div class="val">${formatearMonto(t.precio)}</div>
+              ${t.usado ? `<div class="label">Usado el</div><div class="val">${fecha(t.usadoEn)}</div>` : ''}
+            </div>
+            ${qr.outerHTML}
+          </div>
+          <div class="codigo">${t.codigo}</div>`;
+        grid.append(card);
+      }
+    }
+
+    function cargarEventos() {
+      const eventos = Store.eventos().sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+      const sel = $('#sel-evento');
+      sel.innerHTML = '<option value="">Todos los eventos</option>' +
+        eventos.map((e) => `<option value="${e.id}">${e.nombre}</option>`).join('');
+      const params = new URLSearchParams(location.search);
+      const evParam = params.get('evento');
+      if (evParam) sel.value = evParam;
+    }
+
+    cargarEventos();
+    $('#sel-evento').addEventListener('change', render);
+    $('#sel-estado').addEventListener('change', render);
+
+    // Preseleccionar desde query string
+    render();
+  </script>
+</Base>
