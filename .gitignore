@@ -8,3 +8,7 @@ dist/
 Thumbs.db
 # Datos de demo (localStorage, no archivos)
 salidas/
+
+# Referencias de diseño locales
+v0/
+imgenerate/

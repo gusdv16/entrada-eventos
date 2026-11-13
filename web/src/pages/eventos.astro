@@ -18,6 +18,10 @@ const base = import.meta.env.BASE_URL;
         <label class="field" for="ev-fecha">Fecha y hora</label>
         <input id="ev-fecha" type="datetime-local">
       </div>
+      <div style="grid-column:1/-1">
+        <label class="field" for="ev-bajada">Bajada (opcional)</label>
+        <input id="ev-bajada" type="text" placeholder="Una noche de música y luces">
+      </div>
       <div>
         <label class="field" for="ev-lugar">Lugar</label>
         <input id="ev-lugar" type="text" placeholder="Salón principal">
@@ -68,6 +72,7 @@ const base = import.meta.env.BASE_URL;
       editandoId = null;
       $('#ev-nombre').value = '';
       $('#ev-fecha').value = '';
+      $('#ev-bajada').value = '';
       $('#ev-lugar').value = '';
       $('#ev-cap').value = '100';
       $('#tipos-container').innerHTML = '';
@@ -98,6 +103,7 @@ const base = import.meta.env.BASE_URL;
         id: editandoId || uid(),
         nombre,
         fecha: $('#ev-fecha').value,
+        bajada: $('#ev-bajada').value.trim(),
         lugar: $('#ev-lugar').value.trim(),
         capacidad: Number($('#ev-cap').value) || 100,
         tiposEntrada: tipos,
@@ -147,6 +153,7 @@ const base = import.meta.env.BASE_URL;
       editandoId = id;
       $('#ev-nombre').value = ev.nombre;
       $('#ev-fecha').value = ev.fecha || '';
+      $('#ev-bajada').value = ev.bajada || '';
       $('#ev-lugar').value = ev.lugar || '';
       $('#ev-cap').value = ev.capacidad;
       $('#tipos-container').innerHTML = '';

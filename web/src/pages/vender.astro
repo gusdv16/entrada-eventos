@@ -48,7 +48,7 @@ const base = import.meta.env.BASE_URL;
 
   <div id="tickets-generados" class="hidden">
     <h2>Tickets generados</h2>
-    <p class="sm">Imprimí esta página (Ctrl+P) o descargá los tickets. Cada uno tiene un código único y un QR.</p>
+    <p class="sm">Imprimí esta página (Ctrl+P) y entregá cada ticket. Cada uno tiene un código único y su QR.</p>
     <div class="grid-tickets" id="grid-tickets"></div>
     <div class="actions no-print" style="margin-top:1rem">
       <button class="btn ghost" onclick="window.print()">Imprimir</button>
@@ -59,7 +59,7 @@ const base = import.meta.env.BASE_URL;
   <script>
     import { Store } from '../lib/store.js';
     import { uid, codigoTicket, formatearMonto, fecha } from '../lib/formato.js';
-    import { qrImg } from '../lib/qr.js';
+    import { crearTicket } from '../lib/ticket.js';
 
     const $ = (s) => document.querySelector(s);
     const base = document.body.dataset.base || '/';
@@ -138,28 +138,7 @@ const base = import.meta.env.BASE_URL;
       const grid = $('#grid-tickets');
       grid.innerHTML = '';
       for (const t of tickets) {
-        const card = document.createElement('div');
-        card.className = 'ticket';
-        const qr = await qrImg(t.codigo, 84);
-        card.innerHTML = `
-          <div class="ticket-main">
-            <div class="ticket-evento">${ev.nombre}</div>
-            <div class="ticket-nombre">${t.comprador.nombre}</div>
-            <div class="ticket-meta">
-              <div><div class="lbl">Fecha</div><div class="val">${fecha(ev.fecha)}</div></div>
-              <div><div class="lbl">Lugar</div><div class="val">${ev.lugar || '—'}</div></div>
-              <div><div class="lbl">Tipo</div><div class="val">${t.tipoNombre}</div></div>
-              <div><div class="lbl">Precio</div><div class="val">${formatearMonto(t.precio)}</div></div>
-            </div>
-            <div class="ticket-tipo">${t.tipoNombre}</div>
-          </div>
-          <div class="ticket-stub">
-            <div class="admit">Admit one</div>
-            <img class="ticket-qr" src="${qr.src}" alt="QR ${t.codigo}">
-            <div class="ticket-codigo">${t.codigo}</div>
-            <div class="ticket-precio">${formatearMonto(t.precio)}</div>
-          </div>`;
-        grid.append(card);
+        grid.append(await crearTicket(ev, t));
       }
 
       $('#tickets-generados').classList.remove('hidden');

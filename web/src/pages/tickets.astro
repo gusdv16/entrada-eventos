@@ -33,8 +33,7 @@ const base = import.meta.env.BASE_URL;
 
   <script>
     import { Store } from '../lib/store.js';
-    import { formatearMonto, fecha } from '../lib/formato.js';
-    import { qrImg } from '../lib/qr.js';
+    import { crearTicket } from '../lib/ticket.js';
 
     const $ = (s) => document.querySelector(s);
     const base = document.body.dataset.base || '/';
@@ -57,28 +56,7 @@ const base = import.meta.env.BASE_URL;
       for (const t of tickets) {
         const ev = Store.evento(t.eventoId);
         if (!ev) continue;
-        const card = document.createElement('div');
-        card.className = 'ticket' + (t.usado ? ' usado' : '');
-        const qr = await qrImg(t.codigo, 84);
-        card.innerHTML = `
-          <div class="ticket-main">
-            <div class="ticket-evento">${ev.nombre}</div>
-            <div class="ticket-nombre">${t.comprador.nombre}</div>
-            <div class="ticket-meta">
-              <div><div class="lbl">Fecha</div><div class="val">${fecha(ev.fecha)}</div></div>
-              <div><div class="lbl">Lugar</div><div class="val">${ev.lugar || '—'}</div></div>
-              <div><div class="lbl">Tipo</div><div class="val">${t.tipoNombre}</div></div>
-              <div><div class="lbl">Precio</div><div class="val">${formatearMonto(t.precio)}</div></div>
-              ${t.usado ? `<div><div class="lbl">Usado</div><div class="val">${fecha(t.usadoEn)}</div></div>` : ''}
-            </div>
-            <div class="ticket-tipo">${t.usado ? 'USADO' : t.tipoNombre}</div>
-          </div>
-          <div class="ticket-stub">
-            <div class="admit">Admit one</div>
-            <img class="ticket-qr" src="${qr.src}" alt="QR ${t.codigo}">
-            <div class="ticket-codigo">${t.codigo}</div>
-            <div class="ticket-precio">${formatearMonto(t.precio)}</div>
-          </div>`;
+        const card = await crearTicket(ev, t);
         grid.append(card);
       }
     }
