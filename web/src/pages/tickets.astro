@@ -59,26 +59,26 @@ const base = import.meta.env.BASE_URL;
         if (!ev) continue;
         const card = document.createElement('div');
         card.className = 'ticket' + (t.usado ? ' usado' : '');
-        const qr = await qrImg(t.codigo, 110);
+        const qr = await qrImg(t.codigo, 84);
         card.innerHTML = `
-          <div class="head">
-            <div>
-              <div class="evento">${ev.nombre}</div>
-              <div class="fecha">${fecha(ev.fecha)} · ${ev.lugar || ''}</div>
+          <div class="ticket-main">
+            <div class="ticket-evento">${ev.nombre}</div>
+            <div class="ticket-nombre">${t.comprador.nombre}</div>
+            <div class="ticket-meta">
+              <div><div class="lbl">Fecha</div><div class="val">${fecha(ev.fecha)}</div></div>
+              <div><div class="lbl">Lugar</div><div class="val">${ev.lugar || '—'}</div></div>
+              <div><div class="lbl">Tipo</div><div class="val">${t.tipoNombre}</div></div>
+              <div><div class="lbl">Precio</div><div class="val">${formatearMonto(t.precio)}</div></div>
+              ${t.usado ? `<div><div class="lbl">Usado</div><div class="val">${fecha(t.usadoEn)}</div></div>` : ''}
             </div>
-            <div class="badge ${t.usado ? 'err' : 'ok'}">${t.usado ? 'USADO' : t.tipoNombre}</div>
+            <div class="ticket-tipo">${t.usado ? 'USADO' : t.tipoNombre}</div>
           </div>
-          <div class="body">
-            <div class="info">
-              <div class="label">Comprador</div>
-              <div class="val">${t.comprador.nombre}</div>
-              <div class="label">Precio</div>
-              <div class="val">${formatearMonto(t.precio)}</div>
-              ${t.usado ? `<div class="label">Usado el</div><div class="val">${fecha(t.usadoEn)}</div>` : ''}
-            </div>
-            ${qr.outerHTML}
-          </div>
-          <div class="codigo">${t.codigo}</div>`;
+          <div class="ticket-stub">
+            <div class="admit">Admit one</div>
+            <img class="ticket-qr" src="${qr.src}" alt="QR ${t.codigo}">
+            <div class="ticket-codigo">${t.codigo}</div>
+            <div class="ticket-precio">${formatearMonto(t.precio)}</div>
+          </div>`;
         grid.append(card);
       }
     }
